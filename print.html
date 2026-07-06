@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Print — PianoScribe</title>
+<script src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.4/build/opensheetmusicdisplay.min.js"></script>
+<style>
+  body { margin: 0; background: #fff; color: #222;
+         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  @page { size: A4; margin: 0; }
+  /* A4 at 96dpi = 794 x 1123px; OSMD paginates to the container width */
+  #score { width: 794px; margin: 0 auto; }
+  #score svg { display: block; page-break-after: always; break-after: page; }
+  #hint { padding: 14px 20px; font-size: 14px; color: #555;
+          border-bottom: 1px solid #eee; margin-bottom: 10px; }
+  @media print { #hint { display: none; } }
+</style>
+</head>
+<body>
+<div id="hint">Preparing score…</div>
+<div id="score"></div>
+<script>
+(async () => {
+  const params = new URLSearchParams(location.search);
+  const job = params.get("job");
+  if (!job) throw new Error("missing ?job= parameter");
+
+  const res = await fetch(`/files/${job}/score.musicxml`);
+  if (!res.ok) throw new Error("could not load the score");
+  const xml = await res.text();
+
+  const osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay("score", {
+    autoResize: false,
+    backend: "svg",
+    pageFormat: "A4_P",
+    pageBackgroundColor: "#FFFFFF",
+    drawPartNames: false,
+    drawSubtitle: false,
+  });
+  await osmd.load(xml);
+  osmd.render();
+
+  const pages = document.querySelectorAll("#score svg").length;
+  document.getElementById("hint").textContent =
+    `${pages} page${pages === 1 ? "" : "s"} — choose "Save as PDF" in the print dialog to download. `;
+  const again = document.createElement("a");
+  again.href = "#";
+  again.textContent = "Print again";
+  again.onclick = e => { e.preventDefault(); window.print(); };
+  document.getElementById("hint").appendChild(again);
+
+  if (!params.has("preview")) setTimeout(() => window.print(), 400);
+})().catch(e => {
+  document.getElementById("hint").textContent = "Failed: " + e.message;
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0b0d12">
+<title>PianoScribe — YouTube → piano sheet music</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<script src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.4/build/opensheetmusicdisplay.min.js"></script>
+<script src="https://cdn.jsdelivr.net/combine/npm/tone@14.7.58,npm/@magenta/music@1.23.1/es6/core.js,npm/focus-visible@5,npm/html-midi-player@1.5.0"></script>
+<style>
+  :root {
+    --bg: #0b0d12;
+    --panel: #14171f;
+    --panel2: #1c2029;
+    --line: #262c38;
+    --text: #e9ecf4;
+    --muted: #98a0b3;
+    --accent: #7aa2ff;
+    --accent2: #56d99f;
+    --violet: #8b7bff;
+    --grad: linear-gradient(135deg, #7aa2ff, #8b7bff);
+    --radius: 16px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 30px 20px 60px; }
+
+  /* header */
+  header { display: flex; align-items: center; gap: 14px; margin-bottom: 28px; }
+  .logo {
+    width: 46px; height: 46px; border-radius: 13px; background: var(--grad);
+    display: flex; align-items: center; justify-content: center; font-size: 24px;
+    box-shadow: 0 4px 18px rgba(122, 162, 255, .35);
+  }
+  header h1 {
+    font-size: 26px; margin: 0; letter-spacing: -.02em;
+    background: var(--grad); -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  header p { color: var(--muted); margin: 2px 0 0; font-size: 14px; }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 20px; margin-bottom: 18px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, .25);
+  }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  input[type=url] {
+    flex: 1; min-width: 240px; padding: 13px 16px; font-size: 15px;
+    background: var(--panel2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 11px; outline: none;
+    transition: border-color .15s;
+  }
+  input[type=url]:focus { border-color: var(--accent); }
+  button.primary {
+    padding: 13px 24px; font-size: 15px; font-weight: 700; cursor: pointer;
+    background: var(--grad); color: #0b0e1a; border: none; border-radius: 11px;
+    transition: transform .12s, box-shadow .12s;
+  }
+  button.primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(122,162,255,.35); }
+  button.primary:disabled { opacity: .5; cursor: default; }
+  label.opt { display: flex; align-items: center; gap: 8px; margin-top: 14px; color: var(--muted); font-size: 14px; cursor: pointer; }
+  .inst-row { display: flex; gap: 8px; margin-top: 14px; }
+  .inst {
+    padding: 8px 18px; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--panel2); color: var(--muted); font-size: 14px; font-weight: 600;
+    cursor: pointer; transition: color .12s, border-color .12s;
+  }
+  .inst:hover { color: var(--text); border-color: var(--accent); }
+  .inst.on { background: var(--grad); border-color: transparent; color: #0b0e1a; }
+  .tip-inline { color: var(--muted); font-size: 12px; margin-top: 10px; }
+  .hidden { display: none !important; }
+
+  /* progress */
+  .video { display: flex; gap: 14px; align-items: center; margin-bottom: 16px; }
+  .video img { width: 128px; border-radius: 10px; border: 1px solid var(--line); }
+  .video .t { font-weight: 650; }
+  .video .d { color: var(--muted); font-size: 13px; margin-top: 3px; }
+  .stages { display: flex; flex-direction: column; gap: 9px; }
+  .stage { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; }
+  .stage .dot { width: 10px; height: 10px; border-radius: 50%; background: #333b4c; flex: none; }
+  .stage.active { color: var(--text); }
+  .stage.active .dot { background: var(--accent); animation: pulse 1.2s infinite; }
+  .stage.done { color: var(--accent2); }
+  .stage.done .dot { background: var(--accent2); }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .detail { margin-top: 14px; color: var(--muted); font-size: 13px; font-style: italic; }
+  .error { color: #ff7a7a; white-space: pre-wrap; font-size: 14px; margin-top: 10px; }
+
+  /* results */
+  .tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
+  .tabs button, .downloads a, .downloads button {
+    padding: 9px 18px; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--panel2); color: var(--muted); font-size: 14px; font-weight: 600;
+    cursor: pointer; text-decoration: none; transition: color .12s, border-color .12s;
+  }
+  .tabs button:hover, .downloads a:hover, .downloads button:hover { color: var(--text); border-color: var(--accent); }
+  .tabs button.on { background: var(--grad); border-color: transparent; color: #0b0e1a; }
+  .downloads { margin-left: auto; display: flex; gap: 8px; }
+  .downloads a, .downloads button { color: var(--accent); border-color: rgba(122,162,255,.45); background: transparent; font-size: 13px; padding: 9px 14px; }
+
+  .toolbar {
+    display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+    background: var(--panel2); border: 1px solid var(--line);
+    border-radius: 12px; padding: 10px 14px; margin-bottom: 12px;
+    color: var(--muted); font-size: 13px;
+  }
+  .toolbar .group { display: flex; align-items: center; gap: 8px; }
+  .toolbar select, .toolbar button.mini, .toolbar a.mini {
+    background: var(--panel); color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 5px 10px; font-size: 13px; cursor: pointer;
+    text-decoration: none;
+  }
+  #tabText {
+    background: #101319; border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px; overflow-x: auto; font: 12px/1.6 "SF Mono", Menlo, Consolas, monospace;
+    color: #c7cede; margin: 0;
+  }
+  .chord-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+    gap: 12px; margin-bottom: 16px;
+  }
+  .chord-card {
+    background: var(--panel2); border: 1px solid var(--line); border-radius: 12px;
+    padding: 8px 4px 4px;
+  }
+  .chord-card svg { display: block; width: 100%; }
+  .prog-label { color: var(--muted); font-size: 13px; margin: 4px 0 8px; }
+  .chord-seq {
+    display: flex; flex-wrap: wrap; gap: 6px; max-height: 150px; overflow-y: auto;
+    padding: 2px;
+  }
+  .chip {
+    font-size: 12px; padding: 3px 10px; border-radius: 999px; cursor: pointer;
+    background: var(--panel2); border: 1px solid var(--line); color: var(--muted);
+  }
+  .chip:hover { border-color: var(--accent); color: var(--text); }
+  .chip b { color: var(--text); font-weight: 650; }
+  .toolbar button.mini:hover { border-color: var(--accent); }
+  .toolbar button.mini.armed { border-color: var(--accent2); color: var(--accent2); }
+  .toolbar input[type=range] { accent-color: var(--accent); width: 110px; }
+
+  #sheet { background: #fff; border-radius: 12px; padding: 14px; min-height: 300px; overflow-x: auto; }
+  #rollPane { background: var(--panel2); border-radius: 12px; padding: 16px; border: 1px solid var(--line); }
+  #fall { display: block; width: 100%; height: 500px; border-radius: 10px; background: #101319; }
+  midi-player { display: block; width: 100%; margin-top: 14px; }
+  .note-tip { color: var(--muted); font-size: 13px; margin-top: 12px; }
+
+  /* library */
+  #library h2 { font-size: 17px; margin: 30px 0 14px; color: var(--text); }
+  .lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+  .lib-card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    overflow: hidden; cursor: pointer; position: relative;
+    transition: transform .12s, border-color .12s;
+  }
+  .lib-card:hover { transform: translateY(-2px); border-color: var(--accent); }
+  .lib-card img { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; background: #000; }
+  .lib-card .info { padding: 10px 12px 12px; }
+  .lib-card .lt { font-size: 13px; font-weight: 600; line-height: 1.35; max-height: 2.7em; overflow: hidden; }
+  .lib-card .lm { color: var(--muted); font-size: 12px; margin-top: 5px; }
+  .lib-card .del {
+    position: absolute; top: 8px; right: 8px; border: none; cursor: pointer;
+    background: rgba(10, 12, 18, .75); color: #ff9a9a; border-radius: 8px;
+    padding: 5px 8px; font-size: 12px; opacity: 0; transition: opacity .12s;
+  }
+  .lib-card:hover .del { opacity: 1; }
+
+  footer { color: #5b6172; font-size: 12px; text-align: center; margin-top: 44px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">🎹</div>
+    <div>
+      <h1>PianoScribe</h1>
+      <p>Paste a YouTube, Spotify, TikTok or Instagram link — get sheet music and a falling-notes piano roll.</p>
+    </div>
+  </header>
+
+  <div class="card" id="formCard">
+    <div class="row">
+      <input type="url" id="url" placeholder="YouTube, Spotify, TikTok or Instagram link…" spellcheck="false">
+      <button class="primary" id="go">Transcribe</button>
+    </div>
+    <div class="inst-row">
+      <button class="inst on" id="instPiano">🎹 Piano</button>
+      <button class="inst" id="instGuitar">🎸 Guitar</button>
+    </div>
+    <label class="opt">
+      <input type="checkbox" id="separate">
+      Isolate the instrument first — for songs with vocals, drums or a full band (much slower)
+    </label>
+    <div class="tip-inline">Tip: paste a link anywhere on the page to start instantly · piano covers transcribe best · Spotify songs are fetched via YouTube</div>
+  </div>
+
+  <div class="card hidden" id="progressCard">
+    <div class="video hidden" id="video">
+      <img id="thumb" alt="">
+      <div><div class="t" id="title"></div><div class="d" id="dur"></div></div>
+    </div>
+    <div class="stages" id="stages"></div>
+    <div class="detail" id="detail"></div>
+    <div class="detail" id="elapsed"></div>
+    <div class="error hidden" id="err"></div>
+  </div>
+
+  <div class="card hidden" id="resultCard">
+    <div class="tabs">
+      <button id="tabSheet" class="on">Sheet Music</button>
+      <button id="tabRoll">Piano Roll</button>
+      <button id="tabTab" class="hidden">Tab</button>
+      <button id="tabChords" class="hidden">Chords</button>
+      <div class="downloads">
+        <a id="dlMidi" download>MIDI</a>
+        <a id="dlXml" download>MusicXML</a>
+        <button id="print">Print / PDF</button>
+      </div>
+    </div>
+
+    <div id="sheetPane">
+      <div class="toolbar">
+        <div class="group">Zoom
+          <button class="mini" id="zoomOut">−</button>
+          <span id="zoomPct">100%</span>
+          <button class="mini" id="zoomIn">+</button>
+        </div>
+        <div class="group">Space = play/pause (piano roll)</div>
+      </div>
+      <div id="sheet"></div>
+    </div>
+
+    <div id="rollPane" class="hidden">
+      <div class="toolbar">
+        <div class="group">Speed
+          <select id="speed">
+            <option value="0.5">50%</option>
+            <option value="0.75">75%</option>
+            <option value="1" selected>100%</option>
+            <option value="1.25">125%</option>
+            <option value="1.5">150%</option>
+          </select>
+        </div>
+        <div class="group">Lookahead
+          <input type="range" id="lookahead" min="2" max="8" step="0.5" value="4">
+          <span id="lookaheadVal">4s</span>
+        </div>
+        <div class="group">Loop
+          <button class="mini" id="loopA">A</button>
+          <button class="mini" id="loopB">B</button>
+          <button class="mini" id="loopClear">✕</button>
+          <span id="loopStatus"></span>
+        </div>
+      </div>
+      <canvas id="fall"></canvas>
+      <midi-player id="player" sound-font></midi-player>
+      <div class="note-tip" id="rollTip">Notes fall onto the keys they belong to; keys light up as they sound. Slow the speed down to practice.</div>
+    </div>
+
+    <div id="tabPane" class="hidden">
+      <div class="toolbar">
+        <div class="group">Classic tablature · 16th-note grid · standard tuning</div>
+        <a id="dlTab" class="mini" download="tabs.txt" style="margin-left:auto">Download .txt</a>
+      </div>
+      <pre id="tabText"></pre>
+    </div>
+
+    <div id="chordsPane" class="hidden">
+      <div class="toolbar">
+        <div class="group">The chords that carry the song, most frequent first — click the timeline to jump there</div>
+      </div>
+      <div id="chordGrid" class="chord-grid"></div>
+      <div class="prog-label">Progression</div>
+      <div id="chordSeq" class="chord-seq"></div>
+    </div>
+  </div>
+
+  <div id="library" class="hidden">
+    <h2>Your transcriptions</h2>
+    <div class="lib-grid" id="libGrid"></div>
+  </div>
+
+  <footer>PianoScribe prototype — for personal use. Transcriptions are approximations; tidy complex scores in MuseScore.</footer>
+</div>
+
+<script>
+const STAGE_LABELS = [
+  ["downloading", "Fetch the audio"],
+  ["separating",  "Isolate the instrument (Demucs)"],
+  ["transcribing","Detect the notes (AI model)"],
+  ["engraving",   "Quantize & engrave score"],
+];
+const $ = id => document.getElementById(id);
+let poller = null, osmd = null, currentJob = null;
+let jobStartedAt = null, elapsedTimer = null;
+
+$("go").addEventListener("click", start);
+$("url").addEventListener("keydown", e => { if (e.key === "Enter") start(); });
+$("url").addEventListener("input", () => {
+  // Spotify links are full studio mixes — isolation is practically required.
+  if (/spotify\.com/i.test($("url").value)) $("separate").checked = true;
+});
+$("print").addEventListener("click", () => {
+  // Dedicated print view: re-renders the score paginated to real A4 pages.
+  if (currentJob) window.open(`/print.html?job=${currentJob}`, "_blank");
+});
+$("tabSheet").addEventListener("click", () => switchTab("sheet"));
+$("tabRoll").addEventListener("click", () => switchTab("roll"));
+
+let instrument = "piano";
+$("instPiano").addEventListener("click", () => setInstrument("piano"));
+$("instGuitar").addEventListener("click", () => setInstrument("guitar"));
+function setInstrument(which) {
+  instrument = which;
+  $("instPiano").classList.toggle("on", which === "piano");
+  $("instGuitar").classList.toggle("on", which === "guitar");
+}
+
+function switchTab(which) {
+  for (const [btn, pane, key] of [["tabSheet", "sheetPane", "sheet"],
+                                  ["tabRoll", "rollPane", "roll"],
+                                  ["tabTab", "tabPane", "tab"],
+                                  ["tabChords", "chordsPane", "chords"]]) {
+    $(btn).classList.toggle("on", which === key);
+    $(pane).classList.toggle("hidden", which !== key);
+  }
+}
+$("tabTab").addEventListener("click", () => switchTab("tab"));
+$("tabChords").addEventListener("click", () => switchTab("chords"));
+
+function fmtTime(s) {
+  s = Math.max(0, Math.round(s));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function renderStages(current, separate, doneAll) {
+  const order = STAGE_LABELS.filter(([k]) => separate || k !== "separating");
+  const idx = order.findIndex(([k]) => k === current);
+  $("stages").innerHTML = order.map(([k, label], i) => {
+    const cls = doneAll || i < idx ? "done" : (i === idx ? "active" : "");
+    return `<div class="stage ${cls}"><span class="dot"></span>${label}</div>`;
+  }).join("");
+}
+
+async function start() {
+  const url = $("url").value.trim();
+  if (!url) return;
+  const separate = $("separate").checked;
+  $("go").disabled = true;
+  $("resultCard").classList.add("hidden");
+  $("err").classList.add("hidden");
+  $("video").classList.add("hidden");
+  $("progressCard").classList.remove("hidden");
+  renderStages("downloading", separate, false);
+  jobStartedAt = Date.now();
+  clearInterval(elapsedTimer);
+  elapsedTimer = setInterval(() => {
+    $("elapsed").textContent = "Elapsed " + fmtTime((Date.now() - jobStartedAt) / 1000);
+  }, 1000);
+
+  try {
+    const res = await fetch("/api/transcribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, separate, instrument }),
+    });
+    if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
+    const { job_id } = await res.json();
+    poller = setInterval(() => poll(job_id, separate), 2000);
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function poll(jobId, separate) {
+  let s;
+  try {
+    s = await (await fetch(`/api/jobs/${jobId}`)).json();
+  } catch { return; }
+
+  if (s.title) {
+    $("video").classList.remove("hidden");
+    $("thumb").src = s.thumbnail || "";
+    $("title").textContent = s.title;
+    $("dur").textContent = (s.duration ? fmtTime(s.duration) : "") + (s.tempo ? `  ·  ~${s.tempo} BPM` : "");
+  }
+  $("detail").textContent = s.detail || "";
+
+  if (s.error) { showError(s.error); return; }
+  renderStages(s.stage, separate, s.done);
+  if (s.done) {
+    clearInterval(poller); poller = null;
+    clearInterval(elapsedTimer); elapsedTimer = null;
+    $("elapsed").textContent = "";
+    $("go").disabled = false;
+    showResult(jobId, s);
+    loadLibrary();
+  }
+}
+
+function showError(msg) {
+  if (poller) { clearInterval(poller); poller = null; }
+  clearInterval(elapsedTimer); elapsedTimer = null;
+  $("elapsed").textContent = "";
+  $("go").disabled = false;
+  $("err").textContent = "Something went wrong: " + msg;
+  $("err").classList.remove("hidden");
+  $("detail").textContent = "";
+}
+
+/* ---------- results ---------- */
+let osmdZoom = 1;
+
+async function showResult(jobId, s) {
+  currentJob = jobId;
+  // The "performance" MIDI has sustain pedal baked into note lengths, so it
+  // sounds right in any player; fall back to the raw transcription.
+  const midiUrl = `/files/${jobId}/${s.files.performance || s.files.midi}`;
+  const xmlUrl = `/files/${jobId}/${s.files.musicxml}`;
+  $("dlMidi").href = midiUrl;
+  $("dlXml").href = xmlUrl;
+  $("resultCard").classList.remove("hidden");
+  switchTab("sheet");
+
+  // reset practice state for the new piece
+  rate = 1; $("speed").value = "1";
+  baseNS = null; baseRollNotes = [];
+  loop.a = loop.b = null; updateLoopUI();
+
+  // Instrument-specific views: guitar gets a fretboard + tablature.
+  rollMode = s.instrument === "guitar" ? "guitar" : "piano";
+  $("tabRoll").textContent = rollMode === "guitar" ? "Fretboard" : "Piano Roll";
+  $("tabTab").classList.toggle("hidden", !(rollMode === "guitar" && s.files.tabtxt));
+  $("tabChords").classList.toggle("hidden", !(rollMode === "guitar" && s.files.chords));
+  $("chordGrid").innerHTML = "";
+  $("chordSeq").innerHTML = "";
+  $("rollTip").textContent = rollMode === "guitar"
+    ? "Dots show which fret to press on which string — they brighten as they sound. Rings mark upcoming notes."
+    : "Notes fall onto the keys they belong to; keys light up as they sound. Slow the speed down to practice.";
+
+  // Play the pedal-extended MIDI (sounds right) but draw the raw key-press
+  // durations (reads right — pedal-length bars smear the display).
+  roll.rawLoaded = false;
+  suppressLoad = false; // a real src load must always be captured
+  $("player").src = midiUrl;
+  if (rollMode === "guitar" && s.files.tabs) {
+    fetch(`/files/${jobId}/${s.files.tabs}`).then(r => r.json())
+      .then(data => {
+        baseRollNotes = data.notes.slice().sort((a, b) => a.start - b.start);
+        fretView.capo = data.capo || 0;
+        fretView.maxFret = Math.min(21, Math.max(12,
+          ...baseRollNotes.map(n => n.fret + fretView.capo + 2)));
+        roll.rawLoaded = true;
+        roll.notes = baseRollNotes;
+      })
+      .catch(() => {});
+    if (s.files.tabtxt) {
+      const tabUrl = `/files/${jobId}/${s.files.tabtxt}`;
+      $("dlTab").href = tabUrl;
+      fetch(tabUrl).then(r => r.text()).then(t => { $("tabText").textContent = t; }).catch(() => {});
+    }
+    if (s.files.chords) {
+      fetch(`/files/${jobId}/${s.files.chords}`).then(r => r.json())
+        .then(data => renderChords(data, s.keys || [])).catch(() => {});
+    }
+  } else if (s.files.performance && window.core && core.urlToNoteSequence) {
+    core.urlToNoteSequence(`/files/${jobId}/${s.files.midi}`)
+      .then(ns => { baseRollNotes = notesFromNS(ns); roll.rawLoaded = true; roll.notes = baseRollNotes; })
+      .catch(() => {});  // fall back to the player's own (pedal-extended) notes
+  }
+
+  // Sheet music
+  osmdZoom = 1; $("zoomPct").textContent = "100%";
+  $("sheet").innerHTML = "";
+  osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay("sheet", {
+    autoResize: true,
+    drawingParameters: "default",
+    drawPartNames: false,
+    drawSubtitle: false,
+  });
+  try {
+    await osmd.load(await (await fetch(xmlUrl)).text());
+    osmd.render();
+  } catch (e) {
+    $("sheet").innerHTML = `<p style="color:#c00">Could not render the score: ${e.message}.
+      The MusicXML file can still be downloaded and opened in MuseScore.</p>`;
+  }
+}
+
+$("zoomIn").addEventListener("click", () => setZoom(osmdZoom + 0.15));
+$("zoomOut").addEventListener("click", () => setZoom(osmdZoom - 0.15));
+function setZoom(z) {
+  if (!osmd) return;
+  osmdZoom = Math.min(2, Math.max(0.4, z));
+  $("zoomPct").textContent = Math.round(osmdZoom * 100) + "%";
+  osmd.Zoom = osmdZoom;
+  osmd.render();
+}
+
+/* ---------- library ---------- */
+async function loadLibrary() {
+  let jobs;
+  try {
+    jobs = await (await fetch("/api/jobs")).json();
+  } catch { return; }
+  const done = jobs.filter(j => j.done && !j.error && j.title);
+  $("library").classList.toggle("hidden", done.length === 0);
+  $("libGrid").innerHTML = done.map(j => `
+    <div class="lib-card" data-id="${j.job_id}">
+      <button class="del" title="Delete">🗑</button>
+      <img src="${j.thumbnail || ""}" alt="" loading="lazy">
+      <div class="info">
+        <div class="lt">${(j.title || "Untitled").replace(/</g, "&lt;")}</div>
+        <div class="lm">${j.instrument === "guitar" ? "🎸 " : ""}${j.duration ? fmtTime(j.duration) : ""}${j.tempo ? ` · ~${j.tempo} BPM` : ""} · ${new Date(j.created * 1000).toLocaleDateString()}</div>
+      </div>
+    </div>`).join("");
+
+  for (const card of document.querySelectorAll(".lib-card")) {
+    const id = card.dataset.id;
+    card.addEventListener("click", async () => {
+      const s = await (await fetch(`/api/jobs/${id}`)).json();
+      if (s.done && !s.error) {
+        showResult(id, s);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    });
+    card.querySelector(".del").addEventListener("click", async e => {
+      e.stopPropagation();
+      await fetch(`/api/jobs/${id}`, { method: "DELETE" });
+      if (currentJob === id) { $("resultCard").classList.add("hidden"); currentJob = null; }
+      loadLibrary();
+    });
+  }
+}
+loadLibrary();
+
+/* ---------- guitar chord sheet ---------- */
+function chordSVG(c) {
+  const W = 112, H = 138, left = 22, top = 34, gw = 72, gh = 88, rows = 4;
+  const sx = i => left + gw * i / 5;                       // string 0 (low E) → 5 (high e)
+  const rowY = r => top + gh * r / rows;                   // bottom of fret row r
+  const dotY = f => top + gh * (f - c.base + 0.5) / rows;  // centre of the fret row
+  let svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+  svg += `<text x="${W / 2}" y="15" text-anchor="middle" font-size="14" font-weight="700" fill="#e9ecf4">${c.name}</text>`;
+  if (c.base === 1) {
+    svg += `<rect x="${left - 1}" y="${top - 3}" width="${gw + 2}" height="3" fill="#e9ecf4"/>`;
+  } else {
+    svg += `<text x="${left - 8}" y="${dotY(c.base) + 4}" text-anchor="end" font-size="10" fill="#98a0b3">${c.base}fr</text>`;
+  }
+  for (let i = 0; i < 6; i++) {
+    svg += `<line x1="${sx(i)}" y1="${top}" x2="${sx(i)}" y2="${top + gh}" stroke="#98a0b3" stroke-width="1"/>`;
+    const f = c.frets[i];
+    const mark = f === -1 ? "×" : (f === 0 ? "○" : "");
+    if (mark) svg += `<text x="${sx(i)}" y="${top - 7}" text-anchor="middle" font-size="10" fill="#98a0b3">${mark}</text>`;
+  }
+  for (let r = 0; r <= rows; r++) {
+    svg += `<line x1="${left}" y1="${rowY(r)}" x2="${left + gw}" y2="${rowY(r)}" stroke="#3a4150" stroke-width="1"/>`;
+  }
+  // barre: the strings the pipeline marked as covered by the index finger
+  const minFretted = Math.min(...c.frets.filter(f => f > 0));
+  const barre = c.frets.map((f, i) => (f === minFretted && c.fingers[i] === 1 ? i : -1)).filter(i => i >= 0);
+  const hasBarre = barre.length >= 2;
+  if (hasBarre) {
+    svg += `<rect x="${sx(barre[0]) - 6}" y="${dotY(minFretted) - 6}" width="${sx(barre[barre.length - 1]) - sx(barre[0]) + 12}" height="12" rx="6" fill="#7aa2ff"/>`;
+  }
+  for (let i = 0; i < 6; i++) {
+    const f = c.frets[i];
+    if (f <= 0 || (hasBarre && f === minFretted && c.fingers[i] === 1)) continue;
+    svg += `<circle cx="${sx(i)}" cy="${dotY(f)}" r="7.5" fill="#7aa2ff"/>`;
+    if (c.fingers[i]) svg += `<text x="${sx(i)}" y="${dotY(f) + 3.5}" text-anchor="middle" font-size="9" font-weight="700" fill="#0b0e1a">${c.fingers[i]}</text>`;
+  }
+  return svg + "</svg>";
+}
+
+function seekTo(seconds) {
+  const wasPlaying = player.playing;
+  try {
+    if (wasPlaying) player.stop();
+    player.currentTime = seconds / rate; // chord times are at 100% speed
+    if (wasPlaying) player.start();
+  } catch {}
+}
+
+function renderChords(data) {
+  $("chordGrid").innerHTML = (data.chords || []).map(c =>
+    `<div class="chord-card" title="appears ${c.count}×">${chordSVG(c)}</div>`).join("");
+  $("chordSeq").innerHTML = (data.sequence || []).map(s =>
+    `<span class="chip" data-t="${s.start}"><b>${s.name}</b> ${fmtTime(s.start)}</span>`).join("");
+  for (const chip of document.querySelectorAll("#chordSeq .chip")) {
+    chip.addEventListener("click", () => { seekTo(parseFloat(chip.dataset.t)); switchTab("roll"); });
+  }
+}
+
+/* ---------- paste to transcribe ---------- */
+document.addEventListener("paste", e => {
+  const tag = (document.activeElement || {}).tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA") return;
+  const text = (e.clipboardData || {}).getData ? e.clipboardData.getData("text") : "";
+  if (/^https?:\/\//.test(text.trim())) {
+    $("url").value = text.trim();
+    if (/spotify\.com/i.test(text)) $("separate").checked = true;
+    start();
+  }
+});
+
+/* ---------- keyboard: space = play/pause ---------- */
+document.addEventListener("keydown", e => {
+  const tag = (e.target || {}).tagName;
+  if (e.code !== "Space" || tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" || tag === "BUTTON") return;
+  if ($("resultCard").classList.contains("hidden")) return;
+  e.preventDefault();
+  try { player.playing ? player.stop() : player.start(); } catch {}
+});
+
+/* ---------- Falling-notes piano roll (Synthesia-style) ---------- */
+const PIANO_LOW = 21, PIANO_HIGH = 108, WHITE_COUNT = 52; // 88-key piano, A0-C8
+const BLACK_PCS = new Set([1, 3, 6, 8, 10]);
+const view = { lookahead: 4 };
+const roll = { notes: [], rawLoaded: false };
+const player = $("player");
+const fallCanvas = $("fall");
+const fallCtx = fallCanvas.getContext("2d");
+
+$("lookahead").addEventListener("input", () => {
+  view.lookahead = parseFloat($("lookahead").value);
+  $("lookaheadVal").textContent = view.lookahead + "s";
+});
+
+function notesFromNS(ns) {
+  return (ns && ns.notes ? ns.notes : [])
+    .map(n => ({ start: n.startTime, end: n.endTime, pitch: n.pitch }))
+    .sort((a, b) => a.start - b.start);
+}
+let suppressLoad = false; // assigning noteSequence (speed change) re-fires 'load'
+player.addEventListener("load", () => {
+  if (suppressLoad) { suppressLoad = false; return; }
+  baseNS = player.noteSequence;
+  if (!roll.rawLoaded) {
+    baseRollNotes = notesFromNS(baseNS);
+    roll.notes = baseRollNotes;
+  }
+});
+
+/* ---------- practice speed (time-stretch, pitch unchanged) ---------- */
+let baseNS = null, baseRollNotes = [], rate = 1;
+
+$("speed").addEventListener("change", () => applyRate(parseFloat($("speed").value)));
+
+function applyRate(newRate) {
+  if (!baseNS || !window.core) { $("speed").value = String(rate); return; }
+  const wasPlaying = player.playing;
+  const frac = player.duration ? (player.currentTime || 0) / player.duration : 0;
+  try { player.stop(); } catch {}
+  try {
+    const f = 1 / newRate;
+    const ns = core.sequences.clone(baseNS);
+    ns.notes.forEach(n => {
+      n.startTime = (n.startTime || 0) * f;
+      n.endTime = (n.endTime || 0) * f;
+    });
+    ns.totalTime = (ns.totalTime || 0) * f;
+    suppressLoad = true;
+    player.noteSequence = ns;
+    roll.notes = baseRollNotes.map(n => ({ ...n, start: n.start * f, end: n.end * f }));
+    rate = newRate;
+    updateLoopUI();
+    if (player.duration) player.currentTime = frac * player.duration;
+    if (wasPlaying) player.start();
+  } catch (err) {
+    console.warn("speed change failed", err);
+    $("speed").value = String(rate);
+  }
+}
+
+/* ---------- A-B practice loop (times stored at 100% speed) ---------- */
+const loop = { a: null, b: null };
+$("loopA").addEventListener("click", () => { loop.a = smoothTime() * rate; if (loop.b !== null && loop.b <= loop.a) loop.b = null; updateLoopUI(); });
+$("loopB").addEventListener("click", () => { const t = smoothTime() * rate; if (loop.a !== null && t > loop.a) { loop.b = t; } updateLoopUI(); });
+$("loopClear").addEventListener("click", () => { loop.a = loop.b = null; updateLoopUI(); });
+
+function updateLoopUI() {
+  $("loopA").classList.toggle("armed", loop.a !== null);
+  $("loopB").classList.toggle("armed", loop.b !== null);
+  $("loopStatus").textContent =
+    loop.a === null ? "" :
+    loop.b === null ? `A ${fmtTime(loop.a)} — press B to close` :
+    `${fmtTime(loop.a)} → ${fmtTime(loop.b)}`;
+}
+
+setInterval(() => {
+  if (loop.a === null || loop.b === null || !player.playing) return;
+  if (smoothTime() >= loop.b / rate) {
+    try {
+      player.stop();
+      player.currentTime = loop.a / rate;
+      player.start();
+    } catch {}
+  }
+}, 200);
+
+// The player's reported time only advances when a note fires, so it stalls
+// during long holds — extrapolating from it caused sawtooth jumps. Instead,
+// anchor the clock to note events (each gives an exact "song time = now"
+// reference) and let the wall clock carry it between notes.
+const clock = { t: 0, lastFrame: 0, anchorSong: 0, anchorWall: 0, anchored: false };
+
+function reAnchor(songTime) {
+  clock.anchorSong = songTime;
+  clock.anchorWall = performance.now() / 1000;
+  clock.anchored = true;
+}
+player.addEventListener("start", () => reAnchor(player.currentTime || 0));
+player.addEventListener("note", e => {
+  if (e.detail && e.detail.note) reAnchor(e.detail.note.startTime || 0);
+});
+player.addEventListener("stop", () => { clock.anchored = false; });
+
+function smoothTime() {
+  const now = performance.now() / 1000;
+  const dt = Math.min(now - clock.lastFrame, 0.1);
+  clock.lastFrame = now;
+  if (!player.playing) {
+    clock.anchored = false;
+    clock.t = player.currentTime || 0;
+    return clock.t;
+  }
+  const target = clock.anchored
+    ? clock.anchorSong + (now - clock.anchorWall)
+    : (player.currentTime || 0);
+  clock.t += dt;
+  const err = target - clock.t;
+  if (Math.abs(err) > 2) {
+    clock.t = target; // user seeked
+  } else {
+    clock.t += err * Math.min(1, dt * 6); // slew gradually onto the anchor
+  }
+  return clock.t;
+}
+
+function keyRects(width) {
+  const ww = width / WHITE_COUNT, bw = ww * 0.6;
+  const rects = {};
+  let wi = 0;
+  for (let p = PIANO_LOW; p <= PIANO_HIGH; p++) {
+    if (BLACK_PCS.has(p % 12)) {
+      rects[p] = { x: wi * ww - bw / 2, w: bw, black: true };
+    } else {
+      rects[p] = { x: wi * ww, w: ww, black: false };
+      wi++;
+    }
+  }
+  return rects;
+}
+
+let rollMode = "piano";
+const fretView = { maxFret: 15, capo: 0 };
+const STRING_COLORS = ["#7aa2ff", "#56d99f", "#f2c14e", "#ff9d6e", "#c98bff", "#6ee7f0"];
+
+function drawFretboard(ctx, W, H, t) {
+  const padL = 46, padR = 14, padT = 34, padB = 30;
+  const nutX = padL + 20;
+  const nFrets = fretView.maxFret;
+  const fbW = W - nutX - padR;
+  const boardTop = padT - 12, boardH = H - padT - padB + 24;
+  const fretX = f => nutX + fbW * f / nFrets;
+  const posX = f => f === 0 ? padL - 8 : (fretX(f - 1) + fretX(f)) / 2;
+  const stringY = s => padT + (H - padT - padB) * (s - 1) / 5;
+
+  ctx.fillStyle = "#101319";
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "#171320";
+  ctx.fillRect(nutX, boardTop, fbW, boardH);
+  ctx.fillStyle = "#e9ecf4";
+  ctx.fillRect(nutX - 4, boardTop, 4, boardH); // the nut
+
+  // inlay dots
+  ctx.fillStyle = "rgba(255,255,255,.07)";
+  const midY = boardTop + boardH / 2;
+  for (const f of [3, 5, 7, 9, 12, 15, 17, 19]) {
+    if (f > nFrets) break;
+    for (const y of f === 12 ? [midY - 30, midY + 30] : [midY]) {
+      ctx.beginPath(); ctx.arc(posX(f), y, 7, 0, 7); ctx.fill();
+    }
+  }
+  // fret wires + numbers
+  for (let f = 1; f <= nFrets; f++) {
+    ctx.strokeStyle = "rgba(255,255,255,.16)";
+    ctx.beginPath(); ctx.moveTo(fretX(f), boardTop); ctx.lineTo(fretX(f), boardTop + boardH); ctx.stroke();
+    ctx.fillStyle = "#5b6172"; ctx.font = "10px sans-serif"; ctx.textAlign = "center";
+    ctx.fillText(f, posX(f), H - 8);
+  }
+
+  // gather visible notes; a string is "active" while one of its notes sounds
+  const RING_AFTER = 0.35;
+  const upcoming = [], sounding = [];
+  const activeStrings = new Set();
+  for (const n of roll.notes) {
+    if (n.start > t + view.lookahead) break; // sorted by start
+    if (!n.string || n.end + RING_AFTER < t) continue;
+    if (t < n.start) upcoming.push(n);
+    else { sounding.push(n); if (t <= n.end) activeStrings.add(n.string); }
+  }
+
+  // strings (thicker toward low E), lit in their colour while sounding
+  const labels = ["e", "B", "G", "D", "A", "E"];
+  for (let s = 1; s <= 6; s++) {
+    const y = stringY(s);
+    ctx.lineWidth = 0.8 + s * 0.45;
+    ctx.strokeStyle = activeStrings.has(s) ? STRING_COLORS[s - 1] : "#3a4150";
+    ctx.shadowBlur = activeStrings.has(s) ? 8 : 0;
+    ctx.shadowColor = STRING_COLORS[s - 1];
+    ctx.beginPath(); ctx.moveTo(nutX - 4, y); ctx.lineTo(W - padR, y); ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#9aa1b0"; ctx.font = "12px sans-serif"; ctx.textAlign = "center";
+    ctx.fillText(labels[s - 1], 16, y + 4);
+  }
+  ctx.lineWidth = 1;
+
+  // upcoming notes: faint dot + shrinking approach ring
+  ctx.font = "bold 11px sans-serif"; ctx.textAlign = "center";
+  for (const n of upcoming) {
+    const prog = 1 - (n.start - t) / view.lookahead; // 0 → 1 as it approaches
+    const x = posX(n.fret), y = stringY(n.string);
+    const col = STRING_COLORS[n.string - 1];
+    ctx.globalAlpha = 0.2 + 0.45 * prog;
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.arc(x, y, 11, 0, 7); ctx.fill();
+    ctx.globalAlpha = 0.7 * prog;
+    ctx.strokeStyle = col;
+    ctx.beginPath(); ctx.arc(x, y, 12 + (1 - prog) * 16, 0, 7); ctx.stroke();
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = "#0b0e1a";
+    ctx.fillText(n.fret, x, y + 4);
+    ctx.globalAlpha = 1;
+  }
+  // sounding notes: solid, glowing, fading briefly after release
+  for (const n of sounding) {
+    const x = posX(n.fret), y = stringY(n.string);
+    const col = STRING_COLORS[n.string - 1];
+    ctx.globalAlpha = t <= n.end ? 1 : Math.max(0, 1 - (t - n.end) / RING_AFTER);
+    ctx.shadowBlur = 14; ctx.shadowColor = col;
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.arc(x, y, 13, 0, 7); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#0b0e1a";
+    ctx.fillText(n.fret, x, y + 4);
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawRoll() {
+  requestAnimationFrame(drawRoll);
+  const W = fallCanvas.clientWidth, H = fallCanvas.clientHeight;
+  if (!W || !H) return; // tab hidden
+  const dpr = window.devicePixelRatio || 1;
+  if (fallCanvas.width !== W * dpr || fallCanvas.height !== H * dpr) {
+    fallCanvas.width = W * dpr;
+    fallCanvas.height = H * dpr;
+  }
+  const ctx = fallCtx;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  if (rollMode === "guitar") {
+    drawFretboard(ctx, W, H, smoothTime());
+    return;
+  }
+
+  const kbH = Math.max(64, H * 0.16);
+  const fallH = H - kbH;
+  const pxPerSec = fallH / view.lookahead;
+  const t = smoothTime();
+  const keys = keyRects(W);
+
+  // fall area with faint octave guides at each C
+  ctx.fillStyle = "#101319";
+  ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = "rgba(255,255,255,.06)";
+  for (let p = PIANO_LOW; p <= PIANO_HIGH; p++) {
+    if (p % 12 === 0) {
+      ctx.beginPath();
+      ctx.moveTo(keys[p].x, 0);
+      ctx.lineTo(keys[p].x, fallH);
+      ctx.stroke();
+    }
+  }
+
+  // falling notes, clipped so they vanish into the keyboard
+  const active = new Set();
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, W, fallH);
+  ctx.clip();
+  for (const n of roll.notes) {
+    if (n.start > t + view.lookahead + 0.5) break; // sorted by start
+    if (n.end < t) continue;
+    const k = keys[n.pitch];
+    if (!k) continue;
+    if (t >= n.start) active.add(n.pitch);
+    const yBottom = fallH - (n.start - t) * pxPerSec;
+    const h = Math.max(6, (n.end - n.start) * pxPerSec - 2);
+    const right = n.pitch >= 60;
+    ctx.fillStyle = t >= n.start ? (right ? "#b7ccff" : "#a4f0cd")
+                                 : (right ? "#7aa2ff" : "#56d99f");
+    ctx.beginPath();
+    ctx.roundRect(k.x + 1, yBottom - h, k.w - 2, h, 4);
+    ctx.fill();
+  }
+  // loop markers
+  for (const [val, label] of [[loop.a, "A"], [loop.b, "B"]]) {
+    if (val === null) continue;
+    const y = fallH - (val / rate - t) * pxPerSec;
+    if (y < 0 || y > fallH) continue;
+    ctx.fillStyle = "rgba(86,217,159,.8)";
+    ctx.fillRect(0, y - 1, W, 2);
+    ctx.font = "11px sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText(label, 6, y - 5);
+  }
+  ctx.restore();
+
+  // hit line
+  ctx.fillStyle = "rgba(255,255,255,.28)";
+  ctx.fillRect(0, fallH - 1, W, 2);
+
+  // keyboard: white keys first, black keys on top
+  for (let p = PIANO_LOW; p <= PIANO_HIGH; p++) {
+    const k = keys[p];
+    if (k.black) continue;
+    ctx.fillStyle = active.has(p) ? (p >= 60 ? "#7aa2ff" : "#56d99f") : "#f7f8fa";
+    ctx.fillRect(k.x, fallH, k.w, kbH);
+    ctx.strokeStyle = "#2a2f3a";
+    ctx.strokeRect(k.x + 0.5, fallH + 0.5, k.w - 1, kbH - 1);
+    if (p % 12 === 0 && k.w >= 10) { // label the Cs (skip on very narrow screens)
+      ctx.fillStyle = "#9aa1b0";
+      ctx.font = "9px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("C" + (Math.floor(p / 12) - 1), k.x + k.w / 2, fallH + kbH - 6);
+    }
+  }
+  const bkH = kbH * 0.62;
+  for (let p = PIANO_LOW; p <= PIANO_HIGH; p++) {
+    const k = keys[p];
+    if (!k.black) continue;
+    ctx.fillStyle = active.has(p) ? (p >= 60 ? "#4b79ff" : "#2bb37b") : "#14161c";
+    ctx.beginPath();
+    ctx.roundRect(k.x, fallH, k.w, bkH, [0, 0, 3, 3]);
+    ctx.fill();
+  }
+}
+requestAnimationFrame(drawRoll);
+</script>
+</body>
+</html>
