@@ -1,0 +1,13 @@
+basic-pitch==0.3.0
+coremltools==9.0
+demucs==4.0.1
+fastapi==0.139.0
+librosa==0.11.0
+music21==10.5.0
+piano-transcription-inference==0.0.6
+pretty_midi==0.2.11
+torch==2.12.1
+torchcodec==0.14.0
+transkun==2.0.1
+uvicorn==0.50.0
+yt-dlp==2026.7.4
